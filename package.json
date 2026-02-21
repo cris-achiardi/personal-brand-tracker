@@ -6,10 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "import:linkedin": "tsx --env-file=.env.local src/scripts/import-linkedin.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.1",
+    "exceljs": "^4.4.0",
     "next": "16.1.6",
     "next-auth": "5.0.0-beta.30",
     "papaparse": "^5.5.3",
@@ -26,6 +28,7 @@
     "drizzle-kit": "^0.31.9",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }
