@@ -114,6 +114,52 @@ export const posts = brandTracker.table(
   ],
 );
 
+// ── post_link_clicks ────────────────────────────────────────────────────────
+// Per-URL click breakdown from per-post exports. Each post can reference 1-3
+// external URLs, each with its own click count.
+export const postLinkClicks = brandTracker.table(
+  "post_link_clicks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    postId: uuid("post_id")
+      .notNull()
+      .references(() => posts.id),
+    url: text("url").notNull(),
+    clicks: integer("clicks").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("post_link_clicks_post_url_idx").on(t.postId, t.url),
+  ],
+);
+
+// ── post_engagement_highlights ──────────────────────────────────────────────
+// Per-post audience highlights from per-post exports. LinkedIn provides the
+// top job title, location, and industry for each engagement type (reactions,
+// comments, shares) over a date range.
+export const postEngagementHighlights = brandTracker.table(
+  "post_engagement_highlights",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    postId: uuid("post_id")
+      .notNull()
+      .references(() => posts.id),
+    engagementType: text("engagement_type").notNull(), // "reaction" | "comment" | "share"
+    periodStart: date("period_start"),
+    periodEnd: date("period_end"),
+    topJobTitle: text("top_job_title"),
+    topLocation: text("top_location"),
+    topIndustry: text("top_industry"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("post_engagement_highlights_unique_idx").on(
+      t.postId,
+      t.engagementType,
+    ),
+  ],
+);
+
 // ── demographics_snapshots ──────────────────────────────────────────────────
 // Audience breakdown per aggregate import (Sheet 5) or per individual post
 // (per-post export Sheet 2). Exactly one of import_id / post_id is set.

@@ -85,7 +85,7 @@ brand-tracker/
 All tables live under the `brand_tracker` schema using Drizzle's `pgSchema`.
 Schema designed to match real LinkedIn Analytics exports (aggregate 6-month report + per-post manual exports).
 
-### Tables (5)
+### Tables (7)
 
 **brand_tracker.profiles** — One per platform
 - `id` (uuid, PK, `gen_random_uuid()`)
@@ -138,6 +138,26 @@ Schema designed to match real LinkedIn Analytics exports (aggregate 6-month repo
 - `created_at`, `updated_at` (timestamp, not null, default now)
 - Unique: `(platform, platform_id)` — upsert on re-import
 - URL matching: both exports share the same numeric ID at the end of the URN
+
+**brand_tracker.post_link_clicks** — Per-URL click breakdown from per-post exports
+- `id` (uuid, PK, `gen_random_uuid()`)
+- `post_id` (uuid, FK → posts, not null)
+- `url` (text, not null) — the external URL that was clicked
+- `clicks` (integer, not null)
+- `created_at` (timestamp, not null, default now)
+- Unique: `(post_id, url)`
+
+**brand_tracker.post_engagement_highlights** — Per-post audience highlights
+- `id` (uuid, PK, `gen_random_uuid()`)
+- `post_id` (uuid, FK → posts, not null)
+- `engagement_type` (text, not null) — "reaction", "comment", "share"
+- `period_start` (date, nullable) — highlight date range start
+- `period_end` (date, nullable) — highlight date range end
+- `top_job_title` (text, nullable)
+- `top_location` (text, nullable)
+- `top_industry` (text, nullable)
+- `created_at` (timestamp, not null, default now)
+- Unique: `(post_id, engagement_type)`
 
 **brand_tracker.demographics_snapshots** — Audience breakdown (per-import or per-post)
 - `id` (uuid, PK, `gen_random_uuid()`)
