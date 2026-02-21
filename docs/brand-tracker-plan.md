@@ -82,62 +82,73 @@ brand-tracker/
 
 ## Database Schema (Drizzle + Supabase PostgreSQL)
 
-All tables live under the `brand_tracker` schema using Drizzle's `pgSchema`:
+All tables live under the `brand_tracker` schema using Drizzle's `pgSchema`.
+Schema designed to match real LinkedIn Analytics exports (aggregate 6-month report + per-post manual exports).
 
-```ts
-import { pgSchema, uuid, text, integer, real, timestamp } from 'drizzle-orm/pg-core';
+### Tables (5)
 
-export const brandTracker = pgSchema('brand_tracker');
-```
-
-### Tables
-
-**brand_tracker.profiles**
+**brand_tracker.profiles** — One per platform
 - `id` (uuid, PK, `gen_random_uuid()`)
-- `platform` (text, not null) — "linkedin", "twitter", "youtube", etc.
-- `handle` (text, not null) — username or profile URL
-- `displayName` (text)
-- `createdAt` (timestamp, default now)
+- `platform` (text, not null, unique) — "linkedin", etc.
+- `handle` (text, nullable) — LinkedIn export doesn't provide this
+- `display_name` (text, nullable)
+- `avatar_url` (text, nullable) — future use
+- `created_at` (timestamp, not null, default now)
 
-**brand_tracker.posts**
+**brand_tracker.imports** — One per file upload
 - `id` (uuid, PK, `gen_random_uuid()`)
-- `profileId` (uuid, FK → profiles)
 - `platform` (text, not null)
-- `externalId` (text, nullable) — platform's own post ID
-- `content` (text, nullable) — post text/title
-- `contentType` (text, not null) — "text", "image", "video", "carousel", "article"
-- `publishedAt` (timestamp, not null)
+- `source` (text, not null) — "linkedin_analytics", "linkedin_post", "favikon", "manual"
+- `file_name` (text, not null)
+- `period_start` (date, nullable) — from aggregate report header
+- `period_end` (date, nullable) — from aggregate report header
+- `total_impressions` (integer, nullable) — Sheet 1 summary
+- `total_members_reached` (integer, nullable) — Sheet 1 summary
+- `total_followers_at_end` (integer, nullable) — Sheet 4 header
+- `row_count` (integer, nullable)
+- `status` (text, not null) — "pending", "processing", "completed", "failed"
+- `error_message` (text, nullable)
+- `created_at` (timestamp, not null, default now)
+
+**brand_tracker.daily_metrics** — Merges engagement (Sheet 2) + followers (Sheet 4)
+- `id` (uuid, PK, `gen_random_uuid()`)
+- `platform` (text, not null)
+- `date` (date, not null)
+- `impressions` (integer, nullable)
+- `interactions` (integer, nullable)
+- `new_followers` (integer, nullable)
+- `profile_views` (integer, nullable) — future
+- `created_at` (timestamp, not null, default now)
+- `updated_at` (timestamp, not null, default now)
+- Unique: `(platform, date)` — upsert on re-import
+
+**brand_tracker.posts** — Merged from aggregate top-50 + per-post exports
+- `id` (uuid, PK, `gen_random_uuid()`)
+- `platform` (text, not null)
+- `platform_id` (text, not null) — numeric ID extracted from activity URN URL
 - `url` (text, nullable)
-- `createdAt` (timestamp, default now)
+- `published_at` (date, not null)
+- `published_time` (text, nullable) — "18:49", per-post export only
+- `content` (text, nullable) — future: scraped or manual
+- `content_type` (text, nullable) — "text", "image", "video", "carousel"
+- *From aggregate report:* `impressions`, `interactions` (integer, nullable)
+- *From per-post export:* `members_reached`, `reactions`, `comments`, `shares`, `saves`, `link_clicks`, `profile_views_from_post`, `followers_from_post`, `sends` (integer, nullable)
+- *Video metrics:* `video_views`, `video_watch_time_seconds`, `video_avg_watch_seconds` (integer, nullable)
+- `engagement_rate` (real, nullable)
+- `created_at`, `updated_at` (timestamp, not null, default now)
+- Unique: `(platform, platform_id)` — upsert on re-import
+- URL matching: both exports share the same numeric ID at the end of the URN
 
-**brand_tracker.post_metrics**
+**brand_tracker.demographics_snapshots** — Audience breakdown (per-import or per-post)
 - `id` (uuid, PK, `gen_random_uuid()`)
-- `postId` (uuid, FK → posts)
-- `impressions` (integer)
-- `likes` (integer)
-- `comments` (integer)
-- `shares` (integer)
-- `clicks` (integer, nullable)
-- `engagementRate` (real, nullable)
-- `snapshotDate` (timestamp, not null) — when this data was captured
-- `createdAt` (timestamp, default now)
-
-**brand_tracker.profile_metrics**
-- `id` (uuid, PK, `gen_random_uuid()`)
-- `profileId` (uuid, FK → profiles)
-- `followers` (integer)
-- `profileViews` (integer, nullable)
-- `connections` (integer, nullable)
-- `snapshotDate` (timestamp, not null)
-- `createdAt` (timestamp, default now)
-
-**brand_tracker.imports**
-- `id` (uuid, PK, `gen_random_uuid()`)
-- `source` (text, not null) — "linkedin_analytics", "favikon", "manual", "generic"
-- `fileName` (text, not null)
-- `rowCount` (integer)
-- `status` (text, not null) — "pending", "completed", "failed"
-- `createdAt` (timestamp, default now)
+- `import_id` (uuid, FK → imports, nullable) — for aggregate report Sheet 5
+- `post_id` (uuid, FK → posts, nullable) — for per-post export Sheet 2
+- `platform` (text, not null)
+- `category` (text, not null) — "job_title", "location", "industry", "seniority", "company_size", "company"
+- `value` (text, not null)
+- `percentage` (real, not null) — stored as float (22.0 not "22%")
+- `created_at` (timestamp, not null, default now)
+- Unique: `(import_id, post_id, platform, category, value)`
 
 ---
 
