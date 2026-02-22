@@ -1,31 +1,20 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { TypeBadge } from "@/components/post-card";
+import {
+  TYPE_META,
+  DAYS,
+  transformPosts,
+  type DbPost,
+  type Post,
+  type PostType,
+} from "@/lib/posts";
 
-// ── Types ───────────────────────────────────────────────────────────────────
-
-export interface DbPost {
-  id: string;
-  platformId: string;
-  publishedAt: string;
-  content: string | null;
-  postUrl: string | null;
-  contentType: string | null;
-  reactions: number | null;
-  comments: number | null;
-  shares: number | null;
-  saves: number | null;
-  impressions: number | null;
-  membersReached: number | null;
-  videoViews: number | null;
-  videoAvgWatchSeconds: number | null;
-  followersFromPost: number | null;
-  engagementRate: number | null;
-}
+// ── Dashboard-only types ────────────────────────────────────────────────────
 
 export interface DailyMetric {
   date: string;
@@ -39,117 +28,6 @@ export interface Demographic {
   category: string;
   value: string;
   percentage: number;
-}
-
-interface Post {
-  id: string;
-  name: string;
-  date: string;
-  likes: number;
-  comments: number;
-  shares: number;
-  saves: number;
-  impressions: number;
-  engagement: number;
-  url: string;
-  lang: "ES" | "EN";
-  type: PostType;
-  dow: string;
-  month: string;
-  monthLabel: string;
-  contentType: string;
-  videoViews: number | null;
-  videoAvgWatchSeconds: number | null;
-  followersFromPost: number;
-  engagementRate: number | null;
-}
-
-type PostType = "demo" | "framework" | "observation" | "announcement";
-
-// ── Constants ───────────────────────────────────────────────────────────────
-
-const TYPE_META: Record<PostType, { label: string; tw: string; bg: string; hex: string }> = {
-  demo:         { label: "Demo",     tw: "text-neon",     bg: "bg-neon/10",     hex: "#e8ff47" },
-  framework:    { label: "How-to",   tw: "text-azure",    bg: "bg-azure/10",    hex: "#74b9ff" },
-  observation:  { label: "Take",     tw: "text-blush",    bg: "bg-blush/10",    hex: "#fd79a8" },
-  announcement: { label: "Announce", tw: "text-lavender", bg: "bg-lavender/10", hex: "#a29bfe" },
-};
-
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
-
-const SORT_OPTS = [
-  { k: "date" as const, l: "Date" },
-  { k: "engagement" as const, l: "Eng" },
-  { k: "likes" as const, l: "Likes" },
-  { k: "comments" as const, l: "Cmts" },
-  { k: "shares" as const, l: "Shares" },
-];
-
-type SortKey = (typeof SORT_OPTS)[number]["k"];
-
-// ── Tagging ─────────────────────────────────────────────────────────────────
-
-function detectLang(name: string): "ES" | "EN" {
-  const en =
-    /\b(the |a |an |of |is |are |was |for |that|this|with|have|has |what|how |about|just|ever|does|make|real|only|one |been|into|can |you |your|our |my |we |they|it )\b/i;
-  return (name.match(en) || []).length >= 2 ? "EN" : "ES";
-}
-
-function detectType(name: string): PostType {
-  const n = name.toLowerCase();
-  if (
-    /creé|publiqué|acabo de|ya está|hice |made|built|created|just |launched|published|v2|primer plugin|segundo plugin|skill.*listas|lanzar un template/.test(
-      n,
-    )
-  )
-    return "demo";
-  if (
-    /qué hace|cómo |settings|usa |features|flujo|capas|desde un|rápida|rápido|import|export|usar!/.test(
-      n,
-    )
-  )
-    return "framework";
-  if (
-    /hackaton|techton|conference|cupos|evento|panita|se colo|nemo|diana/.test(n)
-  )
-    return "announcement";
-  return "observation";
-}
-
-// ── Data transform ──────────────────────────────────────────────────────────
-
-function transformPosts(dbPosts: DbPost[]): Post[] {
-  return dbPosts.map((p) => {
-    const name = p.content ? p.content.slice(0, 120) : "Untitled post";
-    const d = new Date(p.publishedAt + "T12:00:00");
-    const likes = p.reactions ?? 0;
-    const comments = p.comments ?? 0;
-    const shares = p.shares ?? 0;
-    const saves = p.saves ?? 0;
-    return {
-      id: p.id,
-      name,
-      date: p.publishedAt,
-      likes,
-      comments,
-      shares,
-      saves,
-      impressions: p.impressions ?? 0,
-      engagement: likes + comments + shares,
-      url: p.postUrl ?? "#",
-      lang: detectLang(name),
-      type: detectType(name),
-      dow: DAYS[d.getDay()],
-      month: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
-      monthLabel: `${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`,
-      contentType: p.contentType ?? "text",
-      videoViews: p.videoViews,
-      videoAvgWatchSeconds: p.videoAvgWatchSeconds,
-      followersFromPost: p.followersFromPost ?? 0,
-      engagementRate: p.engagementRate,
-    };
-  });
 }
 
 // ── Insights hook ───────────────────────────────────────────────────────────
@@ -472,31 +350,6 @@ function ProgressBar({
   );
 }
 
-function TypeBadge({ type }: { type: PostType }) {
-  const tm = TYPE_META[type];
-  return (
-    <Badge
-      variant="ghost"
-      className={`text-[9px] font-mono rounded px-1.5 py-0 ${tm.tw} ${tm.bg}`}
-    >
-      {tm.label}
-    </Badge>
-  );
-}
-
-function LangBadge({ lang }: { lang: string }) {
-  return (
-    <Badge
-      variant="ghost"
-      className={`text-[9px] font-mono rounded px-1.5 py-0 bg-white/5 ${
-        lang === "ES" ? "text-neon" : "text-azure"
-      }`}
-    >
-      {lang}
-    </Badge>
-  );
-}
-
 // ── Date range helpers ───────────────────────────────────────────────────────
 
 type DateRangePreset = "30d" | "90d" | "3m" | "6m" | "all";
@@ -528,7 +381,7 @@ function getDateBounds(range: DateRangePreset) {
 }
 
 function computeDelta(current: number, previous: number) {
-  if (previous === 0) return current > 0 ? { value: "+∞", positive: true } : null;
+  if (previous === 0) return current > 0 ? { value: "+\u221E", positive: true } : null;
   const pct = Math.round(((current - previous) / previous) * 100);
   if (pct === 0) return null;
   return { value: `${pct > 0 ? "+" : ""}${pct}%`, positive: pct > 0 };
@@ -542,110 +395,6 @@ function DeltaBadge({ delta }: { delta: { value: string; positive: boolean } | n
     >
       {delta.value}
     </span>
-  );
-}
-
-// ── PostCard ────────────────────────────────────────────────────────────────
-
-function ContentTypeBadge({ type }: { type: string }) {
-  const icons: Record<string, string> = {
-    video: "🎬",
-    image: "🖼️",
-    carousel: "📑",
-    text: "📝",
-  };
-  return (
-    <span className="text-[9px] font-mono text-muted-foreground/40">
-      {icons[type] ?? icons.text}
-    </span>
-  );
-}
-
-function PostCard({ post, maxEng }: { post: Post; maxEng: number }) {
-  const dowColor =
-    post.dow === "Fri"
-      ? "text-coral"
-      : ["Mon", "Wed"].includes(post.dow)
-        ? "text-neon"
-        : "text-muted-foreground/50";
-
-  return (
-    <a
-      href={post.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="block group"
-    >
-      <Card className="py-0 gap-0 transition-all duration-150 group-hover:border-neon/15 group-hover:bg-neon/[0.03] group-hover:-translate-y-px">
-        <CardContent className="px-3.5 py-3 flex gap-3 items-start">
-          <div className="w-14 h-14 rounded-lg bg-white/5 flex items-center justify-center shrink-0 text-base">
-            <ContentTypeBadge type={post.contentType} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex gap-1 mb-1.5 flex-wrap items-center">
-              <TypeBadge type={post.type} />
-              <LangBadge lang={post.lang} />
-              <span className={`text-[9px] font-mono ml-0.5 ${dowColor}`}>
-                {post.dow}
-              </span>
-              {post.contentType === "video" && post.videoViews != null && (
-                <span className="text-[9px] font-mono text-azure/60 ml-1">
-                  {post.videoViews.toLocaleString()} views
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-foreground/80 leading-relaxed mb-2 line-clamp-2">
-              {post.name}
-            </p>
-            <div className="flex gap-2.5 items-center flex-wrap">
-              <span className="text-[10px] text-muted-foreground/35 font-mono">
-                {new Date(post.date).toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                  year: "2-digit",
-                })}
-              </span>
-              {(
-                [
-                  ["♥", post.likes, "#ff6b6b"],
-                  ["💬", post.comments, "#74b9ff"],
-                  ["↗", post.shares, "#a29bfe"],
-                  ["🔖", post.saves, "#fd79a8"],
-                ] as const
-              ).map(([icon, val, color]) =>
-                val > 0 ? (
-                  <span
-                    key={icon}
-                    className="flex items-center gap-1 text-[10px] text-foreground/40 font-mono"
-                  >
-                    <span style={{ color }} className="text-[9px]">
-                      {icon}
-                    </span>
-                    {val}
-                  </span>
-                ) : null,
-              )}
-              {post.impressions > 0 && (
-                <span className="text-[10px] text-muted-foreground/30 font-mono">
-                  {post.impressions.toLocaleString()} imp
-                </span>
-              )}
-              <span className="ml-auto text-[10px] text-neon/55 font-mono">
-                {post.engagement} eng
-              </span>
-            </div>
-            <div className="h-0.5 bg-white/5 rounded-sm mt-1.5 overflow-hidden">
-              <div
-                className="h-full rounded-sm bg-gradient-to-r from-neon to-neon/60"
-                style={{
-                  width: `${(post.engagement / maxEng) * 100}%`,
-                }}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </a>
   );
 }
 
@@ -664,11 +413,6 @@ export default function Dashboard({
 }) {
   const posts = useMemo(() => transformPosts(dbPosts), [dbPosts]);
 
-  const [sort, setSort] = useState<SortKey>("date");
-  const [dir, setDir] = useState<"desc" | "asc">("desc");
-  const [search, setSearch] = useState("");
-  const [typeF, setTypeF] = useState<"all" | PostType>("all");
-  const [langF, setLangF] = useState<"all" | "ES" | "EN">("all");
   const [chart, setChart] = useState<"engagement" | "shares">("engagement");
   const [dowType, setDowType] = useState<"all" | "demo" | "framework">("all");
   const [dateRange, setDateRange] = useState<DateRangePreset>("all");
@@ -698,32 +442,10 @@ export default function Dashboard({
 
   const ins = useInsights(periodPosts);
 
-  const filtered = useMemo(() => {
-    const d = periodPosts
-      .filter(
-        (p) =>
-          (typeF === "all" || p.type === typeF) &&
-          (langF === "all" || p.lang === langF) &&
-          (!search || p.name.toLowerCase().includes(search.toLowerCase())),
-      )
-      .sort((a, b) => {
-        const va = sort === "date" ? new Date(a.date).getTime() : a[sort];
-        const vb = sort === "date" ? new Date(b.date).getTime() : b[sort];
-        return dir === "desc"
-          ? (vb as number) - (va as number)
-          : (va as number) - (vb as number);
-      });
-    return d;
-  }, [periodPosts, sort, dir, search, typeF, langF]);
-
-  const maxEng = Math.max(...periodPosts.map((p) => p.engagement), 1);
   const totalEng = periodPosts.reduce((s, p) => s + p.engagement, 0);
   const totalLikes = periodPosts.reduce((s, p) => s + p.likes, 0);
   const totalShares = periodPosts.reduce((s, p) => s + p.shares, 0);
   const avgEng = periodPosts.length ? Math.round(totalEng / periodPosts.length) : 0;
-  const topPost = periodPosts.length
-    ? periodPosts.reduce((a, b) => (a.engagement > b.engagement ? a : b))
-    : null;
   const maxTypeAvg = Math.max(...ins.typeAvgs.map((t) => t.avg), 1);
   const growth = (ins.lateAvg / Math.max(ins.earlyAvg, 1)).toFixed(1);
   const esL = ins.langAvgs.find((l) => l.lang === "ES");
@@ -772,14 +494,6 @@ export default function Dashboard({
   // ── Followers from posts ──
   const totalFollowersFromPosts = periodPosts.reduce((s, p) => s + p.followersFromPost, 0);
 
-  const toggleSort = (k: SortKey) => {
-    if (sort === k) setDir((d) => (d === "desc" ? "asc" : "desc"));
-    else {
-      setSort(k);
-      setDir("desc");
-    }
-  };
-
   const sortedByDate = [...periodPosts].sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
   );
@@ -792,7 +506,7 @@ export default function Dashboard({
         const max = new Date(Math.max(...dates.map((d) => d.getTime())));
         const fmt = (d: Date) =>
           d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
-        return `${fmt(min)} — ${fmt(max)}`;
+        return `${fmt(min)} \u2014 ${fmt(max)}`;
       })()
     : "";
 
@@ -800,16 +514,13 @@ export default function Dashboard({
     <div className="min-h-screen max-w-[920px] mx-auto px-4 py-6">
       {/* ── Header ── */}
       <div className="mb-6">
-        <p className="text-[10px] text-neon font-mono tracking-[2px] uppercase mb-1">
-          LinkedIn Analytics
-        </p>
         <div className="flex justify-between items-end flex-wrap gap-2.5">
           <div>
             <h1 className="text-xl font-bold tracking-tight">
               @cristian-morales-achiardi
             </h1>
             <p className="text-[11px] text-muted-foreground/45 mt-0.5">
-              {periodPosts.length} posts · {dateRangeLabel}
+              {periodPosts.length} posts &middot; {dateRangeLabel}
             </p>
           </div>
           <div className="flex gap-1.5 items-center flex-wrap">
@@ -863,7 +574,7 @@ export default function Dashboard({
             ["Avg / post", String(avgEng), "text-neon", avgDelta],
             ["Likes", totalLikes.toLocaleString(), "text-coral", likesDelta],
             ["Shares", String(totalShares), "text-lavender", sharesDelta],
-            ["Growth", `${growth}×`, "text-blush", null],
+            ["Growth", `${growth}\u00D7`, "text-blush", null],
           ] as [string, string, string, ReturnType<typeof computeDelta>][]
         ).map(([label, value, accent, delta]) => (
           <Card key={label} className="flex-1 min-w-[100px] py-0 gap-0">
@@ -938,7 +649,7 @@ export default function Dashboard({
                   Video views
                 </div>
                 <div className="text-[9px] text-muted-foreground/35 font-mono mt-0.5">
-                  {videoPosts.length} videos · avg {avgWatchSec}s watch
+                  {videoPosts.length} videos &middot; avg {avgWatchSec}s watch
                 </div>
               </CardContent>
             </Card>
@@ -968,7 +679,7 @@ export default function Dashboard({
           <Card className="py-0 gap-0 border-t-2 border-t-neon">
             <CardHeader className="px-4 pt-3.5 pb-0">
               <CardTitle className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground/50 uppercase tracking-[1.5px] font-normal">
-                <span>📊</span> Type vs engagement
+                <span>&#128202;</span> Type vs engagement
               </CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-3.5 pt-3">
@@ -979,7 +690,7 @@ export default function Dashboard({
                     <div className="flex justify-between mb-1">
                       <TypeBadge type={t.type} />
                       <span className="text-[10px] text-muted-foreground/55 font-mono">
-                        {t.avg} avg · {t.count}p
+                        {t.avg} avg &middot; {t.count}p
                       </span>
                     </div>
                     <ProgressBar
@@ -996,7 +707,7 @@ export default function Dashboard({
           <Card className="py-0 gap-0 border-t-2 border-t-neon">
             <CardHeader className="px-4 pt-3.5 pb-0">
               <CardTitle className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground/50 uppercase tracking-[1.5px] font-normal">
-                <span>📅</span> Day of week
+                <span>&#128197;</span> Day of week
               </CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-3.5 pt-3">
@@ -1025,7 +736,7 @@ export default function Dashboard({
           <Card className="py-0 gap-0 border-t-2 border-t-azure">
             <CardHeader className="px-4 pt-3.5 pb-0">
               <CardTitle className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground/50 uppercase tracking-[1.5px] font-normal">
-                <span>📆</span> Monthly avg eng
+                <span>&#128198;</span> Monthly avg eng
               </CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-3.5 pt-3">
@@ -1037,12 +748,12 @@ export default function Dashboard({
           <Card className="py-0 gap-0 border-t-2 border-t-lavender">
             <CardHeader className="px-4 pt-3.5 pb-0">
               <CardTitle className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground/50 uppercase tracking-[1.5px] font-normal">
-                <span>🎯</span> Best posting slots
+                <span>&#127919;</span> Best posting slots
               </CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-3.5 pt-3">
               <p className="text-[11px] text-muted-foreground/50 mb-2.5 leading-relaxed">
-                Type × day combos with highest avg engagement
+                Type &times; day combos with highest avg engagement
               </p>
               {ins.bestSlots.map((s, i) => {
                 const dowColor =
@@ -1081,7 +792,7 @@ export default function Dashboard({
           <Card className="py-0 gap-0 border-t-2 border-t-azure">
             <CardHeader className="px-4 pt-3.5 pb-0">
               <CardTitle className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground/50 uppercase tracking-[1.5px] font-normal">
-                <span>🌐</span> Language split
+                <span>&#127760;</span> Language split
               </CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-3.5 pt-3">
@@ -1098,7 +809,7 @@ export default function Dashboard({
                         {l!.lang}
                       </span>
                       <span className="text-[10px] text-muted-foreground/55 font-mono">
-                        {l!.avg} avg · {l!.count}p ({pct}%)
+                        {l!.avg} avg &middot; {l!.count}p ({pct}%)
                       </span>
                     </div>
                     <ProgressBar pct={pct} color={color} />
@@ -1109,7 +820,7 @@ export default function Dashboard({
                 <p className="mt-2 text-[11px] text-muted-foreground/45 italic leading-relaxed">
                   ES gets{" "}
                   <span className="text-neon">
-                    {Math.round(esL.avg / Math.max(enL.avg, 1))}×
+                    {Math.round(esL.avg / Math.max(enL.avg, 1))}&times;
                   </span>{" "}
                   more engagement than EN.
                 </p>
@@ -1121,7 +832,7 @@ export default function Dashboard({
           <Card className="py-0 gap-0 border-t-2 border-t-lavender">
             <CardHeader className="px-4 pt-3.5 pb-0">
               <CardTitle className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground/50 uppercase tracking-[1.5px] font-normal">
-                <span>↗</span> Spread leaders
+                <span>&nearr;</span> Spread leaders
               </CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-3.5 pt-3">
@@ -1138,7 +849,7 @@ export default function Dashboard({
                       {p.name}
                     </p>
                     <span className="text-[10px] text-lavender font-mono">
-                      {p.shares} shares · {p.engagement} eng
+                      {p.shares} shares &middot; {p.engagement} eng
                     </span>
                   </div>
                 </div>
@@ -1153,7 +864,7 @@ export default function Dashboard({
           <Card className="py-0 gap-0 border-t-2 border-t-blush md:col-span-2">
             <CardHeader className="px-4 pt-3.5 pb-0">
               <CardTitle className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground/50 uppercase tracking-[1.5px] font-normal">
-                <span>📈</span> Growth inflection
+                <span>&#128200;</span> Growth inflection
               </CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-3.5 pt-3">
@@ -1166,7 +877,7 @@ export default function Dashboard({
                     EARLY AVG
                   </div>
                 </div>
-                <div className="text-blush text-sm mb-1">→</div>
+                <div className="text-blush text-sm mb-1">&rarr;</div>
                 <div>
                   <div className="text-xl font-bold text-blush font-mono">
                     {ins.lateAvg}
@@ -1177,7 +888,7 @@ export default function Dashboard({
                 </div>
                 <div className="ml-auto">
                   <div className="text-3xl font-bold text-neon font-mono leading-none">
-                    {growth}×
+                    {growth}&times;
                   </div>
                 </div>
               </div>
@@ -1256,7 +967,7 @@ export default function Dashboard({
             <CardContent className="px-4 py-3.5">
               <Sparkline data={impressionSpark} color="#74b9ff" />
               <p className="text-[10px] text-muted-foreground/35 font-mono mt-1.5">
-                {periodMetrics.length} days tracked · avg{" "}
+                {periodMetrics.length} days tracked &middot; avg{" "}
                 {Math.round(
                   impressionSpark.reduce((a, b) => a + b, 0) /
                     impressionSpark.length,
@@ -1268,118 +979,22 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* ── Top post ── */}
-      {topPost && (
-        <Card className="py-0 gap-0 mb-4 border-neon/15 bg-neon/[0.04]">
-          <CardContent className="px-3.5 py-2.5 flex items-center gap-2.5">
-            <span>🏆</span>
-            <div className="flex-1 min-w-0">
-              <p className="text-[9px] text-neon/50 font-mono tracking-wider mb-0.5">
-                TOP POST ·{" "}
-                {TYPE_META[topPost.type].label.toUpperCase()} ·{" "}
-                {topPost.lang} · {topPost.dow.toUpperCase()}
+      {/* ── View all posts link ── */}
+      <Link href="/posts" className="block group">
+        <Card className="py-0 gap-0 transition-all duration-150 group-hover:border-neon/15 group-hover:bg-neon/[0.03]">
+          <CardContent className="px-4 py-4 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground/80">
+                View all {periodPosts.length} posts
               </p>
-              <p className="text-xs text-foreground truncate">
-                {topPost.name}
+              <p className="text-[10px] text-muted-foreground/40 font-mono mt-0.5">
+                Search, filter, and browse your full post history
               </p>
             </div>
-            <div className="text-right shrink-0">
-              <div className="text-xl font-bold text-neon font-mono">
-                {topPost.engagement}
-              </div>
-              <div className="text-[9px] text-muted-foreground/30 font-mono">
-                ENG
-              </div>
-            </div>
+            <span className="text-neon font-mono text-sm">&rarr;</span>
           </CardContent>
         </Card>
-      )}
-
-      {/* ── Controls ── */}
-      <div className="flex gap-2 mb-2.5 flex-wrap items-center">
-        <Input
-          type="text"
-          placeholder="Search…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 min-w-[140px] h-8 text-xs"
-        />
-        <div className="flex gap-1 flex-wrap">
-          {(
-            ["all", "demo", "framework", "observation", "announcement"] as const
-          ).map((f) => {
-            const active = typeF === f;
-            const tm = f !== "all" ? TYPE_META[f] : null;
-            return (
-              <Button
-                key={f}
-                variant={active ? "secondary" : "ghost"}
-                size="xs"
-                className={`font-mono text-[10px] ${active && tm ? tm.tw : ""}`}
-                onClick={() => setTypeF(f)}
-              >
-                {f === "all" ? "All" : TYPE_META[f].label}
-              </Button>
-            );
-          })}
-        </div>
-        <div className="flex gap-1">
-          {(["all", "ES", "EN"] as const).map((f) => {
-            const active = langF === f;
-            return (
-              <Button
-                key={f}
-                variant={active ? "secondary" : "ghost"}
-                size="xs"
-                className={`font-mono text-[10px] ${
-                  active && f === "ES"
-                    ? "text-neon"
-                    : active && f === "EN"
-                      ? "text-azure"
-                      : ""
-                }`}
-                onClick={() => setLangF(f)}
-              >
-                {f === "all" ? "ES+EN" : f}
-              </Button>
-            );
-          })}
-        </div>
-        <div className="flex gap-1 flex-wrap">
-          {SORT_OPTS.map(({ k, l }) => (
-            <Button
-              key={k}
-              variant={sort === k ? "secondary" : "ghost"}
-              size="xs"
-              className="font-mono text-[10px]"
-              onClick={() => toggleSort(k)}
-            >
-              {l}
-              {sort === k && (
-                <span className="text-[8px] ml-0.5">
-                  {dir === "desc" ? "↓" : "↑"}
-                </span>
-              )}
-            </Button>
-          ))}
-        </div>
-      </div>
-
-      <p className="text-[10px] text-muted-foreground/30 font-mono mb-2.5">
-        {filtered.length} of {periodPosts.length} posts
-      </p>
-
-      {/* ── Post list ── */}
-      <div className="flex flex-col gap-1.5">
-        {filtered.map((post) => (
-          <PostCard key={post.id} post={post} maxEng={maxEng} />
-        ))}
-        {filtered.length === 0 && (
-          <div className="text-center py-10 text-muted-foreground/20 font-mono text-[11px]">
-            no posts match
-          </div>
-        )}
-      </div>
+      </Link>
     </div>
   );
 }
