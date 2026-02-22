@@ -497,6 +497,54 @@ function LangBadge({ lang }: { lang: string }) {
   );
 }
 
+// ── Date range helpers ───────────────────────────────────────────────────────
+
+type DateRangePreset = "30d" | "90d" | "3m" | "6m" | "all";
+
+const DATE_RANGE_PRESETS: { k: DateRangePreset; l: string }[] = [
+  { k: "30d", l: "30d" },
+  { k: "90d", l: "90d" },
+  { k: "3m", l: "3m" },
+  { k: "6m", l: "6m" },
+  { k: "all", l: "All" },
+];
+
+function getDateBounds(range: DateRangePreset) {
+  if (range === "all") return null;
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  const start = new Date();
+  if (range === "30d") start.setDate(start.getDate() - 30);
+  else if (range === "90d") start.setDate(start.getDate() - 90);
+  else if (range === "3m") start.setMonth(start.getMonth() - 3);
+  else start.setMonth(start.getMonth() - 6);
+  start.setHours(0, 0, 0, 0);
+  const duration = end.getTime() - start.getTime();
+  const prevEnd = new Date(start.getTime() - 1);
+  prevEnd.setHours(23, 59, 59, 999);
+  const prevStart = new Date(prevEnd.getTime() - duration);
+  prevStart.setHours(0, 0, 0, 0);
+  return { start, end, prevStart, prevEnd };
+}
+
+function computeDelta(current: number, previous: number) {
+  if (previous === 0) return current > 0 ? { value: "+∞", positive: true } : null;
+  const pct = Math.round(((current - previous) / previous) * 100);
+  if (pct === 0) return null;
+  return { value: `${pct > 0 ? "+" : ""}${pct}%`, positive: pct > 0 };
+}
+
+function DeltaBadge({ delta }: { delta: { value: string; positive: boolean } | null }) {
+  if (!delta) return null;
+  return (
+    <span
+      className={`text-[10px] font-mono ml-1.5 ${delta.positive ? "text-neon" : "text-coral"}`}
+    >
+      {delta.value}
+    </span>
+  );
+}
+
 // ── PostCard ────────────────────────────────────────────────────────────────
 
 function ContentTypeBadge({ type }: { type: string }) {
@@ -623,11 +671,35 @@ export default function Dashboard({
   const [langF, setLangF] = useState<"all" | "ES" | "EN">("all");
   const [chart, setChart] = useState<"engagement" | "shares">("engagement");
   const [dowType, setDowType] = useState<"all" | "demo" | "framework">("all");
+  const [dateRange, setDateRange] = useState<DateRangePreset>("all");
 
-  const ins = useInsights(posts);
+  const { periodPosts, prevPosts, periodMetrics, prevMetrics } = useMemo(() => {
+    const bounds = getDateBounds(dateRange);
+    if (!bounds) {
+      return {
+        periodPosts: posts,
+        prevPosts: [] as Post[],
+        periodMetrics: metrics,
+        prevMetrics: [] as DailyMetric[],
+      };
+    }
+    const { start, end, prevStart, prevEnd } = bounds;
+    const inRange = (dateStr: string, s: Date, e: Date) => {
+      const d = new Date(dateStr + "T12:00:00");
+      return d >= s && d <= e;
+    };
+    return {
+      periodPosts: posts.filter((p) => inRange(p.date, start, end)),
+      prevPosts: posts.filter((p) => inRange(p.date, prevStart, prevEnd)),
+      periodMetrics: metrics.filter((m) => inRange(m.date, start, end)),
+      prevMetrics: metrics.filter((m) => inRange(m.date, prevStart, prevEnd)),
+    };
+  }, [dateRange, posts, metrics]);
+
+  const ins = useInsights(periodPosts);
 
   const filtered = useMemo(() => {
-    const d = posts
+    const d = periodPosts
       .filter(
         (p) =>
           (typeF === "all" || p.type === typeF) &&
@@ -642,15 +714,15 @@ export default function Dashboard({
           : (va as number) - (vb as number);
       });
     return d;
-  }, [posts, sort, dir, search, typeF, langF]);
+  }, [periodPosts, sort, dir, search, typeF, langF]);
 
-  const maxEng = Math.max(...posts.map((p) => p.engagement));
-  const totalEng = posts.reduce((s, p) => s + p.engagement, 0);
-  const totalLikes = posts.reduce((s, p) => s + p.likes, 0);
-  const totalShares = posts.reduce((s, p) => s + p.shares, 0);
-  const avgEng = posts.length ? Math.round(totalEng / posts.length) : 0;
-  const topPost = posts.length
-    ? posts.reduce((a, b) => (a.engagement > b.engagement ? a : b))
+  const maxEng = Math.max(...periodPosts.map((p) => p.engagement), 1);
+  const totalEng = periodPosts.reduce((s, p) => s + p.engagement, 0);
+  const totalLikes = periodPosts.reduce((s, p) => s + p.likes, 0);
+  const totalShares = periodPosts.reduce((s, p) => s + p.shares, 0);
+  const avgEng = periodPosts.length ? Math.round(totalEng / periodPosts.length) : 0;
+  const topPost = periodPosts.length
+    ? periodPosts.reduce((a, b) => (a.engagement > b.engagement ? a : b))
     : null;
   const maxTypeAvg = Math.max(...ins.typeAvgs.map((t) => t.avg), 1);
   const growth = (ins.lateAvg / Math.max(ins.earlyAvg, 1)).toFixed(1);
@@ -658,17 +730,33 @@ export default function Dashboard({
   const enL = ins.langAvgs.find((l) => l.lang === "EN");
 
   // ── Daily metrics computed ──
-  const totalNewFollowers = metrics.reduce((s, m) => s + (m.newFollowers ?? 0), 0);
-  const totalProfileViews = metrics.reduce((s, m) => s + (m.profileViews ?? 0), 0);
-  const followerSpark = metrics.map((m) => m.newFollowers ?? 0);
-  const impressionSpark = metrics.map((m) => m.impressions ?? 0);
+  const totalNewFollowers = periodMetrics.reduce((s, m) => s + (m.newFollowers ?? 0), 0);
+  const totalProfileViews = periodMetrics.reduce((s, m) => s + (m.profileViews ?? 0), 0);
+  const followerSpark = periodMetrics.map((m) => m.newFollowers ?? 0);
+  const impressionSpark = periodMetrics.map((m) => m.impressions ?? 0);
 
   // ── Video stats ──
-  const videoPosts = posts.filter((p) => p.contentType === "video" && p.videoViews != null);
+  const videoPosts = periodPosts.filter((p) => p.contentType === "video" && p.videoViews != null);
   const totalVideoViews = videoPosts.reduce((s, p) => s + (p.videoViews ?? 0), 0);
   const avgWatchSec = videoPosts.length
     ? Math.round(videoPosts.reduce((s, p) => s + (p.videoAvgWatchSeconds ?? 0), 0) / videoPosts.length)
     : 0;
+
+  // ── Previous period (for deltas) ──
+  const prevTotalEng = prevPosts.reduce((s, p) => s + p.engagement, 0);
+  const prevAvgEng = prevPosts.length ? Math.round(prevTotalEng / prevPosts.length) : 0;
+  const prevTotalLikes = prevPosts.reduce((s, p) => s + p.likes, 0);
+  const prevTotalShares = prevPosts.reduce((s, p) => s + p.shares, 0);
+  const prevNewFollowers = prevMetrics.reduce((s, m) => s + (m.newFollowers ?? 0), 0);
+  const prevProfileViews = prevMetrics.reduce((s, m) => s + (m.profileViews ?? 0), 0);
+
+  const showDeltas = dateRange !== "all";
+  const engDelta = showDeltas ? computeDelta(totalEng, prevTotalEng) : null;
+  const avgDelta = showDeltas ? computeDelta(avgEng, prevAvgEng) : null;
+  const likesDelta = showDeltas ? computeDelta(totalLikes, prevTotalLikes) : null;
+  const sharesDelta = showDeltas ? computeDelta(totalShares, prevTotalShares) : null;
+  const newFollowersDelta = showDeltas ? computeDelta(totalNewFollowers, prevNewFollowers) : null;
+  const profileViewsDelta = showDeltas ? computeDelta(totalProfileViews, prevProfileViews) : null;
 
   // ── Demographics grouped ──
   const demoGrouped = useMemo(() => {
@@ -682,7 +770,7 @@ export default function Dashboard({
   }, [demographics]);
 
   // ── Followers from posts ──
-  const totalFollowersFromPosts = posts.reduce((s, p) => s + p.followersFromPost, 0);
+  const totalFollowersFromPosts = periodPosts.reduce((s, p) => s + p.followersFromPost, 0);
 
   const toggleSort = (k: SortKey) => {
     if (sort === k) setDir((d) => (d === "desc" ? "asc" : "desc"));
@@ -692,14 +780,14 @@ export default function Dashboard({
     }
   };
 
-  const sortedByDate = [...posts].sort(
+  const sortedByDate = [...periodPosts].sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
   );
   const chartData = sortedByDate.map((p) => p[chart]);
 
-  const dateRange = posts.length
+  const dateRangeLabel = periodPosts.length
     ? (() => {
-        const dates = posts.map((p) => new Date(p.date));
+        const dates = periodPosts.map((p) => new Date(p.date));
         const min = new Date(Math.min(...dates.map((d) => d.getTime())));
         const max = new Date(Math.max(...dates.map((d) => d.getTime())));
         const fmt = (d: Date) =>
@@ -721,26 +809,42 @@ export default function Dashboard({
               @cristian-morales-achiardi
             </h1>
             <p className="text-[11px] text-muted-foreground/45 mt-0.5">
-              {posts.length} posts · {dateRange}
+              {periodPosts.length} posts · {dateRangeLabel}
             </p>
           </div>
-          <div className="flex gap-1.5">
-            <Button
-              variant={chart === "engagement" ? "secondary" : "ghost"}
-              size="xs"
-              className={`font-mono text-[10px] ${chart === "engagement" ? "text-neon" : ""}`}
-              onClick={() => setChart("engagement")}
-            >
-              engagement
-            </Button>
-            <Button
-              variant={chart === "shares" ? "secondary" : "ghost"}
-              size="xs"
-              className={`font-mono text-[10px] ${chart === "shares" ? "text-lavender" : ""}`}
-              onClick={() => setChart("shares")}
-            >
-              shares
-            </Button>
+          <div className="flex gap-1.5 items-center flex-wrap">
+            <div className="flex gap-1">
+              {DATE_RANGE_PRESETS.map(({ k, l }) => (
+                <Button
+                  key={k}
+                  variant={dateRange === k ? "secondary" : "ghost"}
+                  size="xs"
+                  className={`font-mono text-[10px] ${dateRange === k ? "text-neon" : ""}`}
+                  onClick={() => setDateRange(k)}
+                >
+                  {l}
+                </Button>
+              ))}
+            </div>
+            <div className="h-3.5 w-px bg-white/10" />
+            <div className="flex gap-1">
+              <Button
+                variant={chart === "engagement" ? "secondary" : "ghost"}
+                size="xs"
+                className={`font-mono text-[10px] ${chart === "engagement" ? "text-neon" : ""}`}
+                onClick={() => setChart("engagement")}
+              >
+                engagement
+              </Button>
+              <Button
+                variant={chart === "shares" ? "secondary" : "ghost"}
+                size="xs"
+                className={`font-mono text-[10px] ${chart === "shares" ? "text-lavender" : ""}`}
+                onClick={() => setChart("shares")}
+              >
+                shares
+              </Button>
+            </div>
           </div>
         </div>
         <div className="mt-2.5">
@@ -755,19 +859,20 @@ export default function Dashboard({
       <div className="flex gap-2 mb-4 flex-wrap">
         {(
           [
-            ["Total eng", totalEng.toLocaleString(), "text-neon"],
-            ["Avg / post", String(avgEng), "text-neon"],
-            ["Likes", totalLikes.toLocaleString(), "text-coral"],
-            ["Shares", String(totalShares), "text-lavender"],
-            ["Growth", `${growth}×`, "text-blush"],
-          ] as const
-        ).map(([label, value, accent]) => (
+            ["Total eng", totalEng.toLocaleString(), "text-neon", engDelta],
+            ["Avg / post", String(avgEng), "text-neon", avgDelta],
+            ["Likes", totalLikes.toLocaleString(), "text-coral", likesDelta],
+            ["Shares", String(totalShares), "text-lavender", sharesDelta],
+            ["Growth", `${growth}×`, "text-blush", null],
+          ] as [string, string, string, ReturnType<typeof computeDelta>][]
+        ).map(([label, value, accent, delta]) => (
           <Card key={label} className="flex-1 min-w-[100px] py-0 gap-0">
             <CardContent className="px-4 py-3.5">
               <div
                 className={`text-xl font-bold font-mono tracking-tight ${accent}`}
               >
                 {value}
+                <DeltaBadge delta={delta} />
               </div>
               <div className="text-[10px] text-muted-foreground/50 uppercase tracking-widest mt-0.5">
                 {label}
@@ -778,7 +883,7 @@ export default function Dashboard({
       </div>
 
       {/* ── Reach & Followers row ── */}
-      {(metrics.length > 0 || followerCount || videoPosts.length > 0) && (
+      {(periodMetrics.length > 0 || followerCount || videoPosts.length > 0) && (
         <div className="flex gap-2 mb-4 flex-wrap">
           {followerCount != null && (
             <Card className="flex-1 min-w-[120px] py-0 gap-0">
@@ -792,12 +897,13 @@ export default function Dashboard({
               </CardContent>
             </Card>
           )}
-          {metrics.length > 0 && (
+          {periodMetrics.length > 0 && (
             <>
               <Card className="flex-1 min-w-[120px] py-0 gap-0">
                 <CardContent className="px-4 py-3.5">
                   <div className="text-xl font-bold font-mono tracking-tight text-azure">
                     +{totalNewFollowers.toLocaleString()}
+                    <DeltaBadge delta={newFollowersDelta} />
                   </div>
                   <div className="text-[10px] text-muted-foreground/50 uppercase tracking-widest mt-0.5">
                     New followers
@@ -813,6 +919,7 @@ export default function Dashboard({
                 <CardContent className="px-4 py-3.5">
                   <div className="text-xl font-bold font-mono tracking-tight text-foreground/70">
                     {totalProfileViews.toLocaleString()}
+                    <DeltaBadge delta={profileViewsDelta} />
                   </div>
                   <div className="text-[10px] text-muted-foreground/50 uppercase tracking-widest mt-0.5">
                     Profile views
@@ -980,7 +1087,7 @@ export default function Dashboard({
             <CardContent className="px-4 pb-3.5 pt-3">
               {[esL, enL].filter(Boolean).map((l) => {
                 const color = l!.lang === "ES" ? "#e8ff47" : "#74b9ff";
-                const pct = Math.round((l!.count / posts.length) * 100);
+                const pct = Math.round((l!.count / periodPosts.length) * 100);
                 return (
                   <div key={l!.lang} className="mb-2.5 last:mb-0">
                     <div className="flex justify-between mb-1">
@@ -1140,7 +1247,7 @@ export default function Dashboard({
       )}
 
       {/* ── Impressions trend ── */}
-      {metrics.length > 3 && (
+      {periodMetrics.length > 3 && (
         <div className="mb-4">
           <p className="text-[10px] text-muted-foreground/40 font-mono tracking-[2px] uppercase mb-2.5">
             Daily impressions
@@ -1149,7 +1256,7 @@ export default function Dashboard({
             <CardContent className="px-4 py-3.5">
               <Sparkline data={impressionSpark} color="#74b9ff" />
               <p className="text-[10px] text-muted-foreground/35 font-mono mt-1.5">
-                {metrics.length} days tracked · avg{" "}
+                {periodMetrics.length} days tracked · avg{" "}
                 {Math.round(
                   impressionSpark.reduce((a, b) => a + b, 0) /
                     impressionSpark.length,
@@ -1259,7 +1366,7 @@ export default function Dashboard({
       </div>
 
       <p className="text-[10px] text-muted-foreground/30 font-mono mb-2.5">
-        {filtered.length} of {posts.length} posts
+        {filtered.length} of {periodPosts.length} posts
       </p>
 
       {/* ── Post list ── */}
