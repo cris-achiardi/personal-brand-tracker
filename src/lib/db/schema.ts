@@ -77,6 +77,7 @@ export const posts = brandTracker.table(
     platform: text("platform").notNull(),
     platformId: text("platform_id").notNull(),
     url: text("url"),
+    postUrl: text("post_url"),
     publishedAt: date("published_at").notNull(),
     publishedTime: text("published_time"), // "18:49" — per-post export only
     content: text("content"),
