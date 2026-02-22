@@ -21,6 +21,24 @@ export interface DbPost {
   saves: number | null;
   impressions: number | null;
   membersReached: number | null;
+  videoViews: number | null;
+  videoAvgWatchSeconds: number | null;
+  followersFromPost: number | null;
+  engagementRate: number | null;
+}
+
+export interface DailyMetric {
+  date: string;
+  impressions: number | null;
+  interactions: number | null;
+  newFollowers: number | null;
+  profileViews: number | null;
+}
+
+export interface Demographic {
+  category: string;
+  value: string;
+  percentage: number;
 }
 
 interface Post {
@@ -30,6 +48,8 @@ interface Post {
   likes: number;
   comments: number;
   shares: number;
+  saves: number;
+  impressions: number;
   engagement: number;
   url: string;
   lang: "ES" | "EN";
@@ -37,6 +57,11 @@ interface Post {
   dow: string;
   month: string;
   monthLabel: string;
+  contentType: string;
+  videoViews: number | null;
+  videoAvgWatchSeconds: number | null;
+  followersFromPost: number;
+  engagementRate: number | null;
 }
 
 type PostType = "demo" | "framework" | "observation" | "announcement";
@@ -101,6 +126,7 @@ function transformPosts(dbPosts: DbPost[]): Post[] {
     const likes = p.reactions ?? 0;
     const comments = p.comments ?? 0;
     const shares = p.shares ?? 0;
+    const saves = p.saves ?? 0;
     return {
       id: p.id,
       name,
@@ -108,6 +134,8 @@ function transformPosts(dbPosts: DbPost[]): Post[] {
       likes,
       comments,
       shares,
+      saves,
+      impressions: p.impressions ?? 0,
       engagement: likes + comments + shares,
       url: p.postUrl ?? "#",
       lang: detectLang(name),
@@ -115,6 +143,11 @@ function transformPosts(dbPosts: DbPost[]): Post[] {
       dow: DAYS[d.getDay()],
       month: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
       monthLabel: `${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`,
+      contentType: p.contentType ?? "text",
+      videoViews: p.videoViews,
+      videoAvgWatchSeconds: p.videoAvgWatchSeconds,
+      followersFromPost: p.followersFromPost ?? 0,
+      engagementRate: p.engagementRate,
     };
   });
 }
@@ -466,6 +499,20 @@ function LangBadge({ lang }: { lang: string }) {
 
 // ── PostCard ────────────────────────────────────────────────────────────────
 
+function ContentTypeBadge({ type }: { type: string }) {
+  const icons: Record<string, string> = {
+    video: "🎬",
+    image: "🖼️",
+    carousel: "📑",
+    text: "📝",
+  };
+  return (
+    <span className="text-[9px] font-mono text-muted-foreground/40">
+      {icons[type] ?? icons.text}
+    </span>
+  );
+}
+
 function PostCard({ post, maxEng }: { post: Post; maxEng: number }) {
   const dowColor =
     post.dow === "Fri"
@@ -484,7 +531,7 @@ function PostCard({ post, maxEng }: { post: Post; maxEng: number }) {
       <Card className="py-0 gap-0 transition-all duration-150 group-hover:border-neon/15 group-hover:bg-neon/[0.03] group-hover:-translate-y-px">
         <CardContent className="px-3.5 py-3 flex gap-3 items-start">
           <div className="w-14 h-14 rounded-lg bg-white/5 flex items-center justify-center shrink-0 text-base">
-            📝
+            <ContentTypeBadge type={post.contentType} />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex gap-1 mb-1.5 flex-wrap items-center">
@@ -493,6 +540,11 @@ function PostCard({ post, maxEng }: { post: Post; maxEng: number }) {
               <span className={`text-[9px] font-mono ml-0.5 ${dowColor}`}>
                 {post.dow}
               </span>
+              {post.contentType === "video" && post.videoViews != null && (
+                <span className="text-[9px] font-mono text-azure/60 ml-1">
+                  {post.videoViews.toLocaleString()} views
+                </span>
+              )}
             </div>
             <p className="text-xs text-foreground/80 leading-relaxed mb-2 line-clamp-2">
               {post.name}
@@ -510,18 +562,26 @@ function PostCard({ post, maxEng }: { post: Post; maxEng: number }) {
                   ["♥", post.likes, "#ff6b6b"],
                   ["💬", post.comments, "#74b9ff"],
                   ["↗", post.shares, "#a29bfe"],
+                  ["🔖", post.saves, "#fd79a8"],
                 ] as const
-              ).map(([icon, val, color]) => (
-                <span
-                  key={icon}
-                  className="flex items-center gap-1 text-[10px] text-foreground/40 font-mono"
-                >
-                  <span style={{ color }} className="text-[9px]">
-                    {icon}
+              ).map(([icon, val, color]) =>
+                val > 0 ? (
+                  <span
+                    key={icon}
+                    className="flex items-center gap-1 text-[10px] text-foreground/40 font-mono"
+                  >
+                    <span style={{ color }} className="text-[9px]">
+                      {icon}
+                    </span>
+                    {val}
                   </span>
-                  {val}
+                ) : null,
+              )}
+              {post.impressions > 0 && (
+                <span className="text-[10px] text-muted-foreground/30 font-mono">
+                  {post.impressions.toLocaleString()} imp
                 </span>
-              ))}
+              )}
               <span className="ml-auto text-[10px] text-neon/55 font-mono">
                 {post.engagement} eng
               </span>
@@ -543,7 +603,17 @@ function PostCard({ post, maxEng }: { post: Post; maxEng: number }) {
 
 // ── Main Dashboard ──────────────────────────────────────────────────────────
 
-export default function Dashboard({ posts: dbPosts }: { posts: DbPost[] }) {
+export default function Dashboard({
+  posts: dbPosts,
+  dailyMetrics: metrics = [],
+  demographics = [],
+  followerCount,
+}: {
+  posts: DbPost[];
+  dailyMetrics?: DailyMetric[];
+  demographics?: Demographic[];
+  followerCount?: number | null;
+}) {
   const posts = useMemo(() => transformPosts(dbPosts), [dbPosts]);
 
   const [sort, setSort] = useState<SortKey>("date");
@@ -586,6 +656,33 @@ export default function Dashboard({ posts: dbPosts }: { posts: DbPost[] }) {
   const growth = (ins.lateAvg / Math.max(ins.earlyAvg, 1)).toFixed(1);
   const esL = ins.langAvgs.find((l) => l.lang === "ES");
   const enL = ins.langAvgs.find((l) => l.lang === "EN");
+
+  // ── Daily metrics computed ──
+  const totalNewFollowers = metrics.reduce((s, m) => s + (m.newFollowers ?? 0), 0);
+  const totalProfileViews = metrics.reduce((s, m) => s + (m.profileViews ?? 0), 0);
+  const followerSpark = metrics.map((m) => m.newFollowers ?? 0);
+  const impressionSpark = metrics.map((m) => m.impressions ?? 0);
+
+  // ── Video stats ──
+  const videoPosts = posts.filter((p) => p.contentType === "video" && p.videoViews != null);
+  const totalVideoViews = videoPosts.reduce((s, p) => s + (p.videoViews ?? 0), 0);
+  const avgWatchSec = videoPosts.length
+    ? Math.round(videoPosts.reduce((s, p) => s + (p.videoAvgWatchSeconds ?? 0), 0) / videoPosts.length)
+    : 0;
+
+  // ── Demographics grouped ──
+  const demoGrouped = useMemo(() => {
+    const groups: Record<string, { value: string; percentage: number }[]> = {};
+    demographics.forEach((d) => {
+      if (!groups[d.category]) groups[d.category] = [];
+      groups[d.category].push({ value: d.value, percentage: d.percentage });
+    });
+    Object.values(groups).forEach((arr) => arr.sort((a, b) => b.percentage - a.percentage));
+    return groups;
+  }, [demographics]);
+
+  // ── Followers from posts ──
+  const totalFollowersFromPosts = posts.reduce((s, p) => s + p.followersFromPost, 0);
 
   const toggleSort = (k: SortKey) => {
     if (sort === k) setDir((d) => (d === "desc" ? "asc" : "desc"));
@@ -679,6 +776,80 @@ export default function Dashboard({ posts: dbPosts }: { posts: DbPost[] }) {
           </Card>
         ))}
       </div>
+
+      {/* ── Reach & Followers row ── */}
+      {(metrics.length > 0 || followerCount || videoPosts.length > 0) && (
+        <div className="flex gap-2 mb-4 flex-wrap">
+          {followerCount != null && (
+            <Card className="flex-1 min-w-[120px] py-0 gap-0">
+              <CardContent className="px-4 py-3.5">
+                <div className="text-xl font-bold font-mono tracking-tight text-azure">
+                  {followerCount.toLocaleString()}
+                </div>
+                <div className="text-[10px] text-muted-foreground/50 uppercase tracking-widest mt-0.5">
+                  Followers
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          {metrics.length > 0 && (
+            <>
+              <Card className="flex-1 min-w-[120px] py-0 gap-0">
+                <CardContent className="px-4 py-3.5">
+                  <div className="text-xl font-bold font-mono tracking-tight text-azure">
+                    +{totalNewFollowers.toLocaleString()}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground/50 uppercase tracking-widest mt-0.5">
+                    New followers
+                  </div>
+                  {followerSpark.length > 3 && (
+                    <div className="mt-1.5">
+                      <Sparkline data={followerSpark} color="#74b9ff" />
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+              <Card className="flex-1 min-w-[120px] py-0 gap-0">
+                <CardContent className="px-4 py-3.5">
+                  <div className="text-xl font-bold font-mono tracking-tight text-foreground/70">
+                    {totalProfileViews.toLocaleString()}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground/50 uppercase tracking-widest mt-0.5">
+                    Profile views
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          )}
+          {videoPosts.length > 0 && (
+            <Card className="flex-1 min-w-[120px] py-0 gap-0">
+              <CardContent className="px-4 py-3.5">
+                <div className="text-xl font-bold font-mono tracking-tight text-azure">
+                  {totalVideoViews.toLocaleString()}
+                </div>
+                <div className="text-[10px] text-muted-foreground/50 uppercase tracking-widest mt-0.5">
+                  Video views
+                </div>
+                <div className="text-[9px] text-muted-foreground/35 font-mono mt-0.5">
+                  {videoPosts.length} videos · avg {avgWatchSec}s watch
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          {totalFollowersFromPosts > 0 && (
+            <Card className="flex-1 min-w-[120px] py-0 gap-0">
+              <CardContent className="px-4 py-3.5">
+                <div className="text-xl font-bold font-mono tracking-tight text-neon">
+                  +{totalFollowersFromPosts}
+                </div>
+                <div className="text-[10px] text-muted-foreground/50 uppercase tracking-widest mt-0.5">
+                  Follows from posts
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
 
       {/* ── Patterns ── */}
       <div className="mb-4">
@@ -907,6 +1078,88 @@ export default function Dashboard({ posts: dbPosts }: { posts: DbPost[] }) {
           </Card>
         </div>
       </div>
+
+      {/* ── Audience ── */}
+      {Object.keys(demoGrouped).length > 0 && (
+        <div className="mb-4">
+          <p className="text-[10px] text-muted-foreground/40 font-mono tracking-[2px] uppercase mb-2.5">
+            Audience
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            {(["job_title", "industry", "location"] as const)
+              .filter((cat) => demoGrouped[cat])
+              .map((cat) => {
+                const label =
+                  cat === "job_title"
+                    ? "Top Job Titles"
+                    : cat === "industry"
+                      ? "Top Industries"
+                      : "Top Locations";
+                const accent =
+                  cat === "job_title"
+                    ? "#e8ff47"
+                    : cat === "industry"
+                      ? "#74b9ff"
+                      : "#a29bfe";
+                return (
+                  <Card
+                    key={cat}
+                    className="py-0 gap-0 border-t-2"
+                    style={{ borderTopColor: accent }}
+                  >
+                    <CardHeader className="px-4 pt-3.5 pb-0">
+                      <CardTitle className="text-[10px] font-mono text-muted-foreground/50 uppercase tracking-[1.5px] font-normal">
+                        {label}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-4 pb-3.5 pt-3">
+                      {demoGrouped[cat].slice(0, 5).map((d, i) => (
+                        <div key={d.value} className="mb-2 last:mb-0">
+                          <div className="flex justify-between mb-1">
+                            <span className="text-[11px] text-foreground/70 truncate mr-2">
+                              {d.value}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground/50 font-mono shrink-0">
+                              {d.percentage.toFixed(1)}%
+                            </span>
+                          </div>
+                          <ProgressBar
+                            pct={d.percentage}
+                            color={
+                              i === 0 ? accent : `${accent}80`
+                            }
+                          />
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Impressions trend ── */}
+      {metrics.length > 3 && (
+        <div className="mb-4">
+          <p className="text-[10px] text-muted-foreground/40 font-mono tracking-[2px] uppercase mb-2.5">
+            Daily impressions
+          </p>
+          <Card className="py-0 gap-0">
+            <CardContent className="px-4 py-3.5">
+              <Sparkline data={impressionSpark} color="#74b9ff" />
+              <p className="text-[10px] text-muted-foreground/35 font-mono mt-1.5">
+                {metrics.length} days tracked · avg{" "}
+                {Math.round(
+                  impressionSpark.reduce((a, b) => a + b, 0) /
+                    impressionSpark.length,
+                ).toLocaleString()}{" "}
+                impressions/day
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* ── Top post ── */}
       {topPost && (
